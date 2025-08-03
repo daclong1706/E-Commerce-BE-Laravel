@@ -441,12 +441,16 @@ final class PaymentResolver
                 'transaction_id' => $this->generateTransactionId('STRIPE'),
             ]);
 
+            // Create URLs similar to VNPay implementation
+            $successUrl = route('payment.return') . '?session_id={CHECKOUT_SESSION_ID}&status=success&transaction_id=' . $payment->transaction_id;
+            $cancelUrl = route('payment.return') . '?session_id={CHECKOUT_SESSION_ID}&status=cancel&transaction_id=' . $payment->transaction_id;
+
             // Create Stripe Checkout Session
             $session = $this->stripeService->createCheckoutSession(
                 $lineItems,
                 $order->id,
-                $args['success_url'] ?? null,
-                $args['cancel_url'] ?? null
+                $successUrl,
+                $cancelUrl
             );
 
             // Update payment with Stripe session ID
@@ -466,76 +470,119 @@ final class PaymentResolver
         }
     }
 
-    public function confirmStripePayment($_, array $args)
+    public function stripeWebhook($_, array $args)
     {
-        if (!isset($args['payment_intent_id'])) {
-            return $this->error('payment_intent_id is required', 400);
-        }
-
         try {
-            $paymentIntent = $this->stripeService->retrievePaymentIntent($args['payment_intent_id']);
-            
-            // Find payment record
-            $payment = Payment::where('stripe_payment_intent_id', $args['payment_intent_id'])->first();
-            if (!$payment) {
-                return $this->error('Payment not found', 404);
+            // Validate webhook signature (should be done in middleware/service)
+            if (!$this->stripeService->validateWebhook($args)) {
+                return $this->error('Invalid webhook signature', 400);
             }
 
-            $order = Order::find($payment->order_id);
+            if (!isset($args['type']) || !isset($args['data'])) {
+                return $this->error('Invalid webhook data', 400);
+            }
+
+            $event = $args;
             
-            // Update payment status based on Stripe payment intent status
-            switch ($paymentIntent->status) {
-                case 'succeeded':
-                    $payment->update([
-                        'payment_status' => PaymentStatus::COMPLETED,
-                        'payment_time' => now(),
-                    ]);
+            switch ($event['type']) {
+                case 'checkout.session.completed':
+                    return $this->handleCheckoutSessionCompleted($event['data']['object']);
                     
-                    if ($order && $order->status === OrderStatus::PENDING) {
-                        $order->status = OrderStatus::CONFIRMED;
-                        $order->save();
-                    }
+                case 'payment_intent.succeeded':
+                    return $this->handlePaymentIntentSucceeded($event['data']['object']);
                     
-                    return $this->success([
-                        'payment_status' => 'completed',
-                        'transaction_id' => $payment->transaction_id,
-                    ], 'Payment confirmed successfully', 200);
-                    
-                case 'requires_payment_method':
-                case 'requires_confirmation':
-                    return $this->success([
-                        'payment_status' => 'pending',
-                        'transaction_id' => $payment->transaction_id,
-                    ], 'Payment requires action', 200);
-                    
-                case 'canceled':
-                case 'payment_failed':
-                    $payment->update([
-                        'payment_status' => PaymentStatus::FAILED,
-                    ]);
-                    
-                    if ($order && $order->status !== OrderStatus::CANCELLED) {
-                        $order->status = OrderStatus::CANCELLED;
-                        $order->save();
-                    }
-                    
-                    return $this->error('Payment failed', 400);
+                case 'payment_intent.payment_failed':
+                    return $this->handlePaymentIntentFailed($event['data']['object']);
                     
                 default:
-                    return $this->success([
-                        'payment_status' => $paymentIntent->status,
-                        'transaction_id' => $payment->transaction_id,
-                    ], 'Payment status: ' . $paymentIntent->status, 200);
+                    return $this->success([], 'Webhook received but not processed', 200);
             }
 
         } catch (\Exception $e) {
-            Log::error('Stripe Payment Confirmation Error: ' . $e->getMessage());
-            return $this->error('Failed to confirm payment: ' . $e->getMessage(), 500);
+            Log::error('Stripe Webhook Error: ' . $e->getMessage());
+            return $this->error('Webhook processing failed', 500);
         }
     }
 
+    private function handleCheckoutSessionCompleted($session)
+    {
+        $payment = Payment::where('stripe_session_id', $session['id'])->first();
+        
+        if (!$payment) {
+            Log::warning('Payment not found for Stripe session: ' . $session['id']);
+            return $this->error('Payment not found', 404);
+        }
 
-    
+        $order = Order::find($payment->order_id);
+
+        // Update payment status to completed
+        $payment->update([
+            'payment_status' => PaymentStatus::COMPLETED,
+            'payment_time' => now(),
+        ]);
+
+        // Update order status similar to VNPay success
+        if ($order && $order->status === OrderStatus::PENDING) {
+            $order->status = OrderStatus::CONFIRMED;
+            $order->save();
+        }
+
+        return $this->success([
+            'transaction_id' => $payment->transaction_id,
+        ], 'Payment verified successfully', 200);
+    }
+
+    private function handlePaymentIntentSucceeded($paymentIntent)
+    {
+        $payment = Payment::where('stripe_payment_intent_id', $paymentIntent['id'])->first();
+        
+        if (!$payment) {
+            Log::warning('Payment not found for Stripe payment intent: ' . $paymentIntent['id']);
+            return $this->error('Payment not found', 404);
+        }
+
+        $order = Order::find($payment->order_id);
+
+        $payment->update([
+            'payment_status' => PaymentStatus::COMPLETED,
+            'payment_time' => now(),
+        ]);
+
+        if ($order && $order->status === OrderStatus::PENDING) {
+            $order->status = OrderStatus::CONFIRMED;
+            $order->save();
+        }
+
+        return $this->success([
+            'transaction_id' => $payment->transaction_id,
+        ], 'Payment verified successfully', 200);
+    }
+
+    private function handlePaymentIntentFailed($paymentIntent)
+    {
+        $payment = Payment::where('stripe_payment_intent_id', $paymentIntent['id'])->first();
+        
+        if (!$payment) {
+            Log::warning('Payment not found for failed Stripe payment intent: ' . $paymentIntent['id']);
+            return $this->error('Payment not found', 404);
+        }
+
+        $order = Order::find($payment->order_id);
+
+        // Update payment status to failed similar to VNPay failure
+        $payment->update([
+            'payment_status' => PaymentStatus::FAILED,
+        ]);
+
+        // Cancel order similar to VNPay failure
+        if ($order && $order->status !== OrderStatus::CANCELLED) {
+            $order->status = OrderStatus::CANCELLED;
+            $order->save();
+        }
+
+        return $this->error('Payment failed and order cancelled', 400);
+    }
+
     private function generateTransactionId($method='COD')
     {
         return $method . time() . rand(1000, 9999);
