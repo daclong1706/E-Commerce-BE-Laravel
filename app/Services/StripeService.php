@@ -18,7 +18,7 @@ class StripeService
     {
         try {
             return PaymentIntent::create([
-                'amount' => $amount * 100, // Convert to cents
+                'amount' => $amount > 20000000 ? 20000000 : $amount,
                 'currency' => $currency,
                 'metadata' => $metadata,
                 'automatic_payment_methods' => [
