@@ -401,12 +401,12 @@ final class PaymentResolver
             foreach ($order->items as $item) {
                 $lineItems[] = [
                     'price_data' => [
-                        'currency' => 'usd',
+                        'currency' => 'vnd',
                         'product_data' => [
                             'name' => $item->name ?? 'Product',
                             'description' => 'Order item from E-commerce store',
                         ],
-                        'unit_amount' => (int)($item->price * 100), // Convert to cents
+                        'unit_amount' => (int)($item->price), 
                     ],
                     'quantity' => $item->quantity,
                 ];
@@ -416,12 +416,12 @@ final class PaymentResolver
             if ($order->shipping && $order->shipping->shipping_fee > 0) {
                 $lineItems[] = [
                     'price_data' => [
-                        'currency' => 'usd',
+                        'currency' => 'vnd',
                         'product_data' => [
                             'name' => 'Shipping Fee',
                             'description' => 'Delivery charge',
                         ],
-                        'unit_amount' => (int)($order->shipping->shipping_fee * 100),
+                        'unit_amount' => (int)($order->shipping->shipping_fee),
                     ],
                     'quantity' => 1,
                 ];
