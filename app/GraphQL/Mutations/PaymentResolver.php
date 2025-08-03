@@ -441,9 +441,9 @@ final class PaymentResolver
                 'transaction_id' => $this->generateTransactionId('STRIPE'),
             ]);
 
-            // Create URLs similar to VNPay implementation
-            $successUrl = route('payment.return') . '?session_id={CHECKOUT_SESSION_ID}&status=success&transaction_id=' . $payment->transaction_id;
-            $cancelUrl = route('payment.return') . '?session_id={CHECKOUT_SESSION_ID}&status=cancel&transaction_id=' . $payment->transaction_id;
+            // Use environment variables for URLs instead of route helpers
+            $successUrl = env('STRIPE_SUCCESS_URL') . '?session_id={CHECKOUT_SESSION_ID}&status=success&transaction_id=' . $payment->transaction_id;
+            $cancelUrl = env('STRIPE_CANCEL_URL') . '?session_id={CHECKOUT_SESSION_ID}&status=cancel&transaction_id=' . $payment->transaction_id;
 
             // Create Stripe Checkout Session
             $session = $this->stripeService->createCheckoutSession(
