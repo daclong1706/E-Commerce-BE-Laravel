@@ -1190,7 +1190,7 @@ type StripeCheckoutResponse {
         @field(resolver: "App\\GraphQL\\Mutations\\PaymentResolver@createStripeCheckoutSession")
         @guard(with: ["api"])
     
-    confirmStripePayment(payment_intent_id: String!): PaymentResponse 
-        @field(resolver: "App\\GraphQL\\Mutations\\PaymentResolver@confirmStripePayment")
-        @guard(with: ["api"])
+    # confirmStripePayment(payment_intent_id: String!): PaymentResponse 
+    #     @field(resolver: "App\\GraphQL\\Mutations\\PaymentResolver@confirmStripePayment")
+    #     @guard(with: ["api"])
   }
