@@ -2,9 +2,7 @@ pipeline {
     agent any
     
     environment {
-        // Tên image Docker của bạn trên Docker Hub
         DOCKER_IMAGE = "tempure/laravel-backend:${env.BUILD_NUMBER}"
-        // ID của credential Docker Hub đã lưu trong Jenkins
         DOCKER_HUB_CREDENTIALS_ID = 'docker-hub-creds'
     }
 
@@ -13,7 +11,7 @@ pipeline {
             steps {
                 echo 'Installing Docker inside the Jenkins container...'
                 sh '''
-                    apt-get update && apt-get install -y docker.io
+                    sudo apt-get update && sudo apt-get install -y docker.io
                 '''
             }
         }
