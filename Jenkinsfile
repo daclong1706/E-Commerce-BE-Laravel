@@ -1,69 +1,60 @@
 pipeline {
     agent any
-    
+
     environment {
-        DOCKER_IMAGE = "tempure/laravel-backend:${env.BUILD_NUMBER}"
-        DOCKER_HUB_CREDENTIALS_ID = 'docker-hub-creds'
+        DOCKER_IMAGE = "my-laravel-app"
+        DOCKER_TAG = "latest"
+        REGISTRY = "my-docker-registry.com"
     }
 
     stages {
-        stage('Install Docker') {
+        stage('Checkout') {
             steps {
-                echo 'Installing Docker inside the Jenkins container...'
-                sh '''
-                    sudo apt-get update && sudo apt-get install -y docker.io
-                '''
-            }
-        }
-        
-        stage('Checkout & Setup') {
-            steps {
-                echo 'Checking out source code...'
+                echo "Checking out source code..."
                 checkout scm
             }
         }
-        
-        stage('Build & Install Dependencies') {
-            steps {
-                echo 'Building and installing dependencies inside a Docker container...'
-                script {
-                    sh "docker run --rm -v \${PWD}:/app -w /app composer install --no-interaction"
-                }
-            }
-        }
-        
+
         stage('Build Docker Image') {
             steps {
-                echo 'Building Docker image...'
-                script {
-                    sh "docker build -t ${DOCKER_IMAGE} ."
-                }
+                echo "Building Docker image..."
+                sh """
+                  docker build -t ${DOCKER_IMAGE}:${DOCKER_TAG} .
+                """
             }
         }
-        
+
         stage('Push Docker Image') {
             steps {
-                echo 'Pushing Docker image to Docker Hub...'
-                script {
-                    withCredentials([usernamePassword(credentialsId: DOCKER_HUB_CREDENTIALS_ID, passwordVariable: 'DOCKER_PASSWORD', usernameVariable: 'DOCKER_USERNAME')]) {
-                        sh "docker login -u ${DOCKER_USERNAME} -p ${DOCKER_PASSWORD}"
-                        sh "docker push ${DOCKER_IMAGE}"
-                    }
-                }
+                echo "Pushing Docker image..."
+                sh """
+                  docker tag ${DOCKER_IMAGE}:${DOCKER_TAG} ${REGISTRY}/${DOCKER_IMAGE}:${DOCKER_TAG}
+                  docker push ${REGISTRY}/${DOCKER_IMAGE}:${DOCKER_TAG}
+                """
+            }
+        }
+
+        stage('Deploy') {
+            steps {
+                echo "Deploying application..."
+                // Example deployment command
+                sh """
+                  docker run -d --name ${DOCKER_IMAGE} -p 8000:8000 ${DOCKER_IMAGE}:${DOCKER_TAG}
+                """
             }
         }
     }
-    
+
     post {
         always {
-            echo 'Cleaning up workspace...'
+            echo "Cleaning up workspace..."
             cleanWs()
         }
-        success {
-            echo 'Pipeline completed successfully!'
-        }
         failure {
-            echo 'Pipeline failed!'
+            echo "Pipeline failed!"
+        }
+        success {
+            echo "Pipeline succeeded!"
         }
     }
 }
