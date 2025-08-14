@@ -1,3 +1,11 @@
+properties([
+  parameters([
+    booleanParam(name: 'RUN_CHECKOUT', defaultValue: false, description: 'Run Checkout stage to refresh workspace'),
+    string(name: 'GIT_BRANCH', defaultValue: 'main', description: 'Git branch to build'),
+    booleanParam(name: 'DOCKER_SANITY', defaultValue: false, description: 'Run Docker Sanity stage')
+  ])
+])
+
 node {
     // Image tags
     def DOCKER_IMAGE         = "tempure/laravel-backend:${env.BUILD_NUMBER}"
@@ -14,28 +22,32 @@ node {
     def WS_IN_VOL   = "/jenkins_home/workspace/${env.JOB_NAME}"
 
     try {
-        /* stage('Checkout') {
-            checkout([
-                $class: 'GitSCM',
-                branches: [[name: '*/main']],
-                userRemoteConfigs: [[
-                    url: 'http://host.docker.internal:3000/admin/laravel-backend',
-                    credentialsId: GITEA_CREDENTIALS_ID   // remove this line if public
-                ]]
-            ])
-            echo 'Workspace listing:'
-            sh 'ls -la'
-            if (!fileExists('Dockerfile')) {
-                error 'Dockerfile not found at repo root.'
-            }
-            if (!fileExists('nginx.conf')) {
-                error 'nginx.conf not found at repo root.'
+        stage('Checkout') {
+            if (params.RUN_CHECKOUT) {
+                checkout([
+                    $class: 'GitSCM',
+                    branches: [[name: "*/${params.GIT_BRANCH}"]],
+                    userRemoteConfigs: [[
+                        url: 'http://host.docker.internal:3000/admin/laravel-backend',
+                        credentialsId: GITEA_CREDENTIALS_ID   // remove this line if public
+                    ]]
+                ])
+                echo 'Workspace listing:'
+                sh 'ls -la'
+                if (!fileExists('Dockerfile')) { error 'Dockerfile not found at repo root.' }
+                if (!fileExists('nginx.conf')) { error 'nginx.conf not found at repo root.' }
+            } else {
+                echo 'Checkout skipped (RUN_CHECKOUT=false)'
             }
         }
 
         stage('Docker Sanity') {
-            sh 'docker version'
-        } */
+            if (params.DOCKER_SANITY) {
+                sh 'docker version'
+            } else {
+                echo 'Docker sanity skipped (DOCKER_SANITY=false)'
+            }
+        }
 
         stage('Build Image') {
             retry(2) {
@@ -64,6 +76,7 @@ node {
                 sh 'echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin'
                 sh "docker push ${DOCKER_IMAGE}"
                 sh "docker push ${DOCKER_IMAGE_LATEST}"
+                sh 'docker logout || true'
             }
         }
     } finally {
