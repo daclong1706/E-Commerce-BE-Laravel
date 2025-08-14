@@ -2,66 +2,67 @@ pipeline {
     agent any
 
     environment {
-        // Tên image Docker của bạn trên Docker Hub
+        // Docker image name with build number tag
         DOCKER_IMAGE = "tempure/laravel-backend:${env.BUILD_NUMBER}"
-        // ID của credential Docker Hub
+        // Docker Hub credential ID from Jenkins
         DOCKER_HUB_CREDENTIALS_ID = 'docker-hub-creds'
+        // Gitea credential ID from Jenkins
+        GITEA_CREDENTIALS_ID = 'gitea-creds'
     }
 
     stages {
-        stage('Install Docker') {
+        stage('Checkout & Setup') {
             steps {
-                echo 'Installing Docker inside the Jenkins container...'
+                echo 'Checking out source code from Gitea...'
+                git branch: 'main',
+                    url: 'http://host.docker.internal:3000/admin/laravel-backend',
+                    credentialsId: "${GITEA_CREDENTIALS_ID}"
+            }
+        }
+
+        stage('Install Dependencies') {
+            steps {
+                echo 'Installing PHP dependencies using Composer inside container...'
                 sh '''
-                    sudo apt-get update -y && sudo apt-get install -y docker.io
+                    docker run --rm \
+                        -v "$PWD":/app \
+                        -w /app \
+                        composer:latest \
+                        install --no-interaction --prefer-dist --no-dev
                 '''
             }
         }
-        
-        stage('Checkout & Setup') {
-            steps {
-                echo 'Checking out source code...'
-                git branch: 'main',
-                    url: 'http://host.docker.internal:3000/admin/laravel-backend',
-                    credentialsId: 'gitea-creds'
-                }
-        }
-        
-        stage('Build & Install Dependencies') {
-            steps {
-                echo 'Building and installing dependencies inside a Docker container...'
-                sh "docker run --rm -v \${PWD}:/app -w /app composer install --no-interaction"
-            }
-        }
-        
+
         stage('Build Docker Image') {
             steps {
                 echo 'Building Docker image...'
                 sh "docker build -t ${DOCKER_IMAGE} ."
             }
         }
-        
+
         stage('Push Docker Image') {
             steps {
-                echo 'Pushing Docker image to Docker Hub...'
+                echo 'Logging in to Docker Hub and pushing image...'
                 withCredentials([usernamePassword(credentialsId: DOCKER_HUB_CREDENTIALS_ID, passwordVariable: 'DOCKER_PASSWORD', usernameVariable: 'DOCKER_USERNAME')]) {
-                    sh "docker login -u ${DOCKER_USERNAME} -p ${DOCKER_PASSWORD}"
-                    sh "docker push ${DOCKER_IMAGE}"
+                    sh """
+                        echo "${DOCKER_PASSWORD}" | docker login -u "${DOCKER_USERNAME}" --password-stdin
+                        docker push ${DOCKER_IMAGE}
+                    """
                 }
             }
         }
     }
-    
+
     post {
         always {
             echo 'Cleaning up workspace...'
             cleanWs()
         }
         success {
-            echo 'Pipeline completed successfully!'
+            echo '✅ Pipeline completed successfully!'
         }
         failure {
-            echo 'Pipeline failed!'
+            echo '❌ Pipeline failed!'
         }
     }
 }
