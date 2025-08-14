@@ -11,8 +11,6 @@ pipeline {
         // ID của credential Docker Hub
         DOCKER_HUB_CREDENTIALS_ID = 'docker-hub-creds'
     }
-
-
     stages {
         stage('Install Docker') {
             steps {
@@ -37,9 +35,7 @@ pipeline {
                     sh "docker run --rm -v \${PWD}:/app -w /app composer install --no-interaction"
                 }
             }
-        }
-        
->>>>>>>>> Temporary merge branch 2
+        } 
         stage('Build Docker Image') {
             steps {
                 echo 'Building Docker image...'
@@ -61,6 +57,7 @@ pipeline {
                     withCredentials([usernamePassword(credentialsId: DOCKER_HUB_CREDENTIALS_ID, passwordVariable: 'DOCKER_PASSWORD', usernameVariable: 'DOCKER_USERNAME')]) {
                         sh "docker login -u ${DOCKER_USERNAME} -p ${DOCKER_PASSWORD}"
                         sh "docker push ${DOCKER_IMAGE}"
+                        }
                     }
                 }
             }
