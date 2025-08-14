@@ -2,52 +2,34 @@ pipeline {
     agent any
     
     environment {
-        SONAR_SCANNER_HOME = tool 'SonarQubeScanner'
-        DOCKER_REGISTRY = 'your-registry.com'
-        DOCKER_IMAGE_NAME = 'ecommerce-laravel-backend'
-        DOCKER_TAG = "${BUILD_NUMBER}"
+        // Tên image Docker của bạn trên Docker Hub
+        DOCKER_IMAGE = "tempure/laravel-backend:${env.BUILD_NUMBER}"
+        // ID của credential Docker Hub
+        DOCKER_HUB_CREDENTIALS_ID = 'docker-hub-creds'
     }
-    
+
     stages {
+        stage('Install Docker') {
+            steps {
+                echo 'Installing Docker inside the Jenkins container...'
+                sh '''
+                    apt-get update && apt-get install -y docker.io
+                '''
+            }
+        }
+        
         stage('Checkout & Setup') {
             steps {
                 echo 'Checking out source code...'
                 checkout scm
-                
-                echo 'Installing all PHP dependencies...'
-                sh 'composer install --no-interaction'
-
-                sh 'cp .env.example .env'
-                sh 'php artisan key:generate'
             }
         }
         
-        stage('Test & Coverage') {
+        stage('Build & Install Dependencies') {
             steps {
-                echo 'Running tests with coverage...'
-                sh 'php artisan test --coverage-clover=coverage.xml --log-junit=junit.xml'
-                
-                publishTestResults testResultsPattern: 'junit.xml'
-            }
-        }
-        
-        stage('Code Quality Analysis') {
-            environment {
-                SONAR_TOKEN = credentials('sonar-token')
-            }
-            steps {
-                echo 'Running SonarQube analysis...'
-                withSonarQubeEnv('SonarQube') {
-                    sh "${SONAR_SCANNER_HOME}/bin/sonar-scanner -Dsonar.projectVersion=${BUILD_NUMBER} -Dsonar.login=${SONAR_TOKEN}"
-                }
-            }
-        }
-        
-        stage('Quality Gate') {
-            steps {
-                echo 'Checking SonarQube Quality Gate...'
-                timeout(time: 5, unit: 'MINUTES') {
-                    waitForQualityGate abortPipeline: true
+                echo 'Building and installing dependencies inside a Docker container...'
+                script {
+                    sh "docker run --rm -v \${PWD}:/app -w /app composer install --no-interaction"
                 }
             }
         }
@@ -56,56 +38,32 @@ pipeline {
             steps {
                 echo 'Building Docker image...'
                 script {
-                    def dockerImage = docker.build("${DOCKER_REGISTRY}/${DOCKER_IMAGE_NAME}:${DOCKER_TAG}")
-                    
-                    // Also tag as latest
-                    sh "docker tag ${DOCKER_REGISTRY}/${DOCKER_IMAGE_NAME}:${DOCKER_TAG} ${DOCKER_REGISTRY}/${DOCKER_IMAGE_NAME}:latest"
-                    
-                    // Store image info for next stage
-                    env.DOCKER_IMAGE_FULL = "${DOCKER_REGISTRY}/${DOCKER_IMAGE_NAME}:${DOCKER_TAG}"
+                    sh "docker build -t ${DOCKER_IMAGE} ."
                 }
             }
         }
         
         stage('Push Docker Image') {
-            environment {
-                DOCKER_CREDENTIALS = credentials('docker-registry-credentials')
-            }
             steps {
-                echo 'Pushing Docker image to registry...'
+                echo 'Pushing Docker image to Docker Hub...'
                 script {
-                    docker.withRegistry("https://${DOCKER_REGISTRY}", 'docker-registry-credentials') {
-                        // Push with build number tag
-                        sh "docker push ${DOCKER_REGISTRY}/${DOCKER_IMAGE_NAME}:${DOCKER_TAG}"
-                        
-                        // Push latest tag
-                        sh "docker push ${DOCKER_REGISTRY}/${DOCKER_IMAGE_NAME}:latest"
+                    withCredentials([usernamePassword(credentialsId: DOCKER_HUB_CREDENTIALS_ID, passwordVariable: 'DOCKER_PASSWORD', usernameVariable: 'DOCKER_USERNAME')]) {
+                        sh "docker login -u ${DOCKER_USERNAME} -p ${DOCKER_PASSWORD}"
+                        sh "docker push ${DOCKER_IMAGE}"
                     }
                 }
-                
-                echo "Docker image pushed: ${env.DOCKER_IMAGE_FULL}"
             }
         }
     }
     
     post {
         always {
-            echo 'Cleaning up workspace and Docker images...'
-            
-            // Clean up local Docker images to save space
-            sh """
-                docker rmi ${DOCKER_REGISTRY}/${DOCKER_IMAGE_NAME}:${DOCKER_TAG} || true
-                docker rmi ${DOCKER_REGISTRY}/${DOCKER_IMAGE_NAME}:latest || true
-                docker system prune -f || true
-            """
-            
+            echo 'Cleaning up workspace...'
             cleanWs()
         }
-        
         success {
             echo 'Pipeline completed successfully!'
         }
-        
         failure {
             echo 'Pipeline failed!'
         }
