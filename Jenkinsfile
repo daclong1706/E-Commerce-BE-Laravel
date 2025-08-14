@@ -14,11 +14,23 @@ node {
                     credentialsId: 'gitea-creds'
                 ]]
             ])
+            
+            // Verify workspace contents
+            echo 'Listing workspace contents:'
+            sh 'ls -la'
+            
+            // Check if composer.json exists
+            script {
+                if (!fileExists('composer.json')) {
+                    error 'composer.json file not found in the repository root!'
+                }
+            }
         }
 
         stage('Composer Install') {
             echo 'Installing dependencies...'
-            sh "docker run --rm -v ${pwd()}:/app -w /app composer install --no-interaction"
+            // Fix volume mounting for Jenkins workspace
+            sh "docker run --rm -v ${WORKSPACE}:/app -w /app composer:2 install --no-interaction --no-dev --optimize-autoloader"
         }
 
         stage('Build Docker Image') {
