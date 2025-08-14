@@ -2,9 +2,9 @@ pipeline {
     agent any
     
     environment {
-        
+        // Tên image Docker của bạn trên Docker Hub
         DOCKER_IMAGE = "tempure/laravel-backend:${env.BUILD_NUMBER}"
-        // ID của credential Docker Hub
+        // ID của credential Docker Hub đã lưu trong Jenkins
         DOCKER_HUB_CREDENTIALS_ID = 'docker-hub-creds'
     }
 
