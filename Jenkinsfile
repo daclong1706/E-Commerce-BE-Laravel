@@ -36,14 +36,12 @@ node {
         }
 
         stage('Build Image') {
-            // Use path inside the mounted volume so host Docker can access files
             sh """
-              DOCKER_BUILDKIT=1 docker build \
-                -t ${DOCKER_IMAGE} \
-                -t ${DOCKER_IMAGE_LATEST} \
-                ${WS_IN_VOL}
+                DOCKER_BUILDKIT=1 \
+                tar -C "${WORKSPACE}" -cf - . \
+                | docker build -t ${DOCKER_IMAGE} -t ${DOCKER_IMAGE_LATEST} -
             """
-        }
+            }
 
         stage('Push Image') {
             withCredentials([usernamePassword(
