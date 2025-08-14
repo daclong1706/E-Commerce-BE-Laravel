@@ -1,66 +1,65 @@
 pipeline {
-    agent {
-        docker {
-            image 'php:8.2-cli'    // Base image for build
-            args '-v /var/run/docker.sock:/var/run/docker.sock'
-        }
-    }
+    agent any
 
     environment {
-        REPO_URL = 'http://host.docker.internal:3000/admin/laravel-backend.git'
-        BRANCH   = 'main'
-        CREDS_ID = 'gitea-creds-id'   // Replace with Jenkins credential ID for Gitea
+        // Tên image Docker của bạn trên Docker Hub
+        DOCKER_IMAGE = "tempure/laravel-backend:${env.BUILD_NUMBER}"
+        // ID của credential Docker Hub
+        DOCKER_HUB_CREDENTIALS_ID = 'docker-hub-creds'
     }
 
     stages {
-        stage('Checkout') {
+        stage('Install Docker') {
             steps {
-                git(
-                    url: env.REPO_URL,
-                    branch: env.BRANCH,
-                    credentialsId: env.CREDS_ID
-                )
-            }
-        }
-
-        stage('Install Dependencies') {
-            steps {
+                echo 'Installing Docker inside the Jenkins container...'
                 sh '''
-                    php -v
-                    composer install --no-interaction --prefer-dist --optimize-autoloader
+                    sudo apt-get update -y && sudo apt-get install -y docker.io
                 '''
             }
         }
-
-        stage('Run Tests') {
+        
+        stage('Checkout & Setup') {
             steps {
-                sh '''
-                    vendor/bin/phpunit --testdox
-                '''
+                echo 'Checking out source code...'
+                checkout scm
             }
         }
-
-        stage('Docker Build & Push') {
+        
+        stage('Build & Install Dependencies') {
             steps {
-                sh '''
-                    docker build -t laravel-backend:latest .
-                    docker tag laravel-backend:latest my-docker-registry/laravel-backend:latest
-                    docker push my-docker-registry/laravel-backend:latest
-                '''
+                echo 'Building and installing dependencies inside a Docker container...'
+                sh "docker run --rm -v \${PWD}:/app -w /app composer install --no-interaction"
+            }
+        }
+        
+        stage('Build Docker Image') {
+            steps {
+                echo 'Building Docker image...'
+                sh "docker build -t ${DOCKER_IMAGE} ."
+            }
+        }
+        
+        stage('Push Docker Image') {
+            steps {
+                echo 'Pushing Docker image to Docker Hub...'
+                withCredentials([usernamePassword(credentialsId: DOCKER_HUB_CREDENTIALS_ID, passwordVariable: 'DOCKER_PASSWORD', usernameVariable: 'DOCKER_USERNAME')]) {
+                    sh "docker login -u ${DOCKER_USERNAME} -p ${DOCKER_PASSWORD}"
+                    sh "docker push ${DOCKER_IMAGE}"
+                }
             }
         }
     }
-
+    
     post {
         always {
-            echo 'Cleaning up...'
-            sh 'docker system prune -f'
+            echo 'Cleaning up workspace...'
+            cleanWs()
         }
         success {
-            echo '✅ Build & Tests passed successfully!'
+            echo 'Pipeline completed successfully!'
         }
         failure {
-            echo '❌ Build failed!'
+            echo 'Pipeline failed!'
         }
     }
 }
