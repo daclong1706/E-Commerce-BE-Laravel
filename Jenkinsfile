@@ -1,63 +1,66 @@
 pipeline {
-    agent any
+    agent {
+        docker {
+            image 'php:8.2-cli'    // Base image for build
+            args '-v /var/run/docker.sock:/var/run/docker.sock'
+        }
+    }
 
     environment {
-        DOCKER_IMAGE = "my-laravel-app"
-        DOCKER_TAG = "latest"
-        REGISTRY = "my-docker-registry.com"
+        REPO_URL = 'http://host.docker.internal:3000/admin/laravel-backend.git'
+        BRANCH   = 'main'
+        CREDS_ID = 'gitea-creds-id'   // Replace with Jenkins credential ID for Gitea
     }
 
     stages {
         stage('Checkout') {
             steps {
                 git(
-                    url: 'http://host.docker.internal:3000/admin/laravel-backend.git',
-                    branch: 'main',
-                    credentialsId: 'gitea-creds-id'
+                    url: env.REPO_URL,
+                    branch: env.BRANCH,
+                    credentialsId: env.CREDS_ID
                 )
             }
         }
 
-        stage('Build Docker Image') {
+        stage('Install Dependencies') {
             steps {
-                echo "Building Docker image..."
-                sh """
-                  docker build -t ${DOCKER_IMAGE}:${DOCKER_TAG} .
-                """
+                sh '''
+                    php -v
+                    composer install --no-interaction --prefer-dist --optimize-autoloader
+                '''
             }
         }
 
-        stage('Push Docker Image') {
+        stage('Run Tests') {
             steps {
-                echo "Pushing Docker image..."
-                sh """
-                  docker tag ${DOCKER_IMAGE}:${DOCKER_TAG} ${REGISTRY}/${DOCKER_IMAGE}:${DOCKER_TAG}
-                  docker push ${REGISTRY}/${DOCKER_IMAGE}:${DOCKER_TAG}
-                """
+                sh '''
+                    vendor/bin/phpunit --testdox
+                '''
             }
         }
 
-        stage('Deploy') {
+        stage('Docker Build & Push') {
             steps {
-                echo "Deploying application..."
-                // Example deployment command
-                sh """
-                  docker run -d --name ${DOCKER_IMAGE} -p 8000:8000 ${DOCKER_IMAGE}:${DOCKER_TAG}
-                """
+                sh '''
+                    docker build -t laravel-backend:latest .
+                    docker tag laravel-backend:latest my-docker-registry/laravel-backend:latest
+                    docker push my-docker-registry/laravel-backend:latest
+                '''
             }
         }
     }
 
     post {
         always {
-            echo "Cleaning up workspace..."
-            cleanWs()
-        }
-        failure {
-            echo "Pipeline failed!"
+            echo 'Cleaning up...'
+            sh 'docker system prune -f'
         }
         success {
-            echo "Pipeline succeeded!"
+            echo '✅ Build & Tests passed successfully!'
+        }
+        failure {
+            echo '❌ Build failed!'
         }
     }
 }
