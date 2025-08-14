@@ -2,6 +2,8 @@ node {
     // Image tags
     def DOCKER_IMAGE         = "tempure/laravel-backend:${env.BUILD_NUMBER}"
     def DOCKER_IMAGE_LATEST  = "tempure/laravel-backend:latest"
+    // Add MongoDB ext version for Docker build
+    def MONGODB_EXT_VER      = '1.21.1'
 
     // Credentials
     def DOCKER_HUB_CREDENTIALS_ID = 'docker-hub-creds'
@@ -12,7 +14,7 @@ node {
     def WS_IN_VOL   = "/jenkins_home/workspace/${env.JOB_NAME}"
 
     try {
-        stage('Checkout') {
+        /* stage('Checkout') {
             checkout([
                 $class: 'GitSCM',
                 branches: [[name: '*/main']],
@@ -33,15 +35,25 @@ node {
 
         stage('Docker Sanity') {
             sh 'docker version'
-        }
+        } */
 
         stage('Build Image') {
-            sh """
-                DOCKER_BUILDKIT=1 \
-                tar -C "${WORKSPACE}" -cf - . \
-                | docker build -t ${DOCKER_IMAGE} -t ${DOCKER_IMAGE_LATEST} -
-            """
+            retry(2) {
+                sh """
+                    set -euo pipefail
+                    # Preflight: ensure required files exist when Checkout is disabled
+                    [ -f Dockerfile ] && [ -f nginx.conf ] || {
+                      echo 'Required files missing in workspace. Re-enable Checkout stage or populate workspace.' >&2
+                      exit 1
+                    }
+                    DOCKER_BUILDKIT=1 \
+                    tar -C "${WORKSPACE}" -cf - . \
+                    | docker build --pull --progress=plain \
+                        --build-arg MONGODB_EXT_VER=${MONGODB_EXT_VER} \
+                        -t ${DOCKER_IMAGE} -t ${DOCKER_IMAGE_LATEST} -
+                """
             }
+        }
 
         stage('Push Image') {
             withCredentials([usernamePassword(

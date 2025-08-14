@@ -3,7 +3,7 @@ FROM php:8.2-cli AS builder
 ARG MONGODB_EXT_VER=1.21.1
 
 RUN apt-get update \
- && apt-get install -y --no-install-recommends git unzip libssl-dev pkg-config $PHPIZE_DEPS \
+ && apt-get install -y git unzip libssl-dev pkg-config $PHPIZE_DEPS \
  && pecl channel-update pecl.php.net \
  && pecl install mongodb-${MONGODB_EXT_VER} \
  && docker-php-ext-enable mongodb \
@@ -24,14 +24,12 @@ RUN chown -R www-data:www-data storage bootstrap/cache \
 # ---- runtime ----
 FROM php:8.2-fpm
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    nginx ca-certificates \
-    libpng-dev libjpeg62-turbo-dev libfreetype6-dev libonig-dev libxml2-dev \
+RUN apt-get update && apt-get install -y \
+    nginx supervisor ca-certificates git unzip \
+    libssl-dev pkg-config libpng-dev libjpeg62-turbo-dev libfreetype6-dev libonig-dev libxml2-dev \
  && docker-php-ext-configure gd --with-jpeg --with-freetype \
  && docker-php-ext-install -j"$(nproc)" gd pdo_mysql mbstring exif pcntl bcmath opcache \
- && ln -sf /dev/stdout /var/log/nginx/access.log \
- && ln -sf /dev/stderr /var/log/nginx/error.log \
- && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+ && rm -rf /var/lib/apt/lists/*
 
 # Provide MongoDB extension built in builder stage
 COPY --from=builder /tmp/mongodb.so /usr/local/lib/php/extensions/mongodb.so
@@ -54,5 +52,7 @@ RUN { \
     } > /usr/local/etc/php/conf.d/opcache-recommended.ini
 
 COPY nginx.conf /etc/nginx/nginx.conf
+EXPOSE 80
+CMD php-fpm -D && nginx -g 'daemon off;'
 EXPOSE 80
 CMD php-fpm -D && nginx -g 'daemon off;'
