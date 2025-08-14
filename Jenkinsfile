@@ -10,8 +10,11 @@ pipeline {
     stages {
         stage('Checkout') {
             steps {
-                echo "Checking out source code..."
-                checkout scm
+                git(
+                    url: 'http://host.docker.internal:3000/admin/laravel-backend.git',
+                    branch: 'main',
+                    credentialsId: 'gitea-creds-id'
+                )
             }
         }
 
