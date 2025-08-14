@@ -6,7 +6,12 @@ pipeline {
         DOCKER_IMAGE = "tempure/laravel-backend:${env.BUILD_NUMBER}"
         // ID của credential Docker Hub
         DOCKER_HUB_CREDENTIALS_ID = 'docker-hub-creds'
+        // Tên image Docker của bạn trên Docker Hub
+        DOCKER_IMAGE = "tempure/laravel-backend:${env.BUILD_NUMBER}"
+        // ID của credential Docker Hub
+        DOCKER_HUB_CREDENTIALS_ID = 'docker-hub-creds'
     }
+
 
     stages {
         stage('Install Docker') {
@@ -26,6 +31,7 @@ pipeline {
         }
         
         stage('Build & Install Dependencies') {
+        stage('Build & Install Dependencies') {
             steps {
                 echo 'Building and installing dependencies inside a Docker container...'
                 script {
@@ -33,11 +39,11 @@ pipeline {
                 }
             }
         }
-        
         stage('Build Docker Image') {
             steps {
                 echo 'Building Docker image...'
                 script {
+                    sh "docker build -t ${DOCKER_IMAGE} ."
                     sh "docker build -t ${DOCKER_IMAGE} ."
                 }
             }
@@ -46,7 +52,11 @@ pipeline {
         stage('Push Docker Image') {
             steps {
                 echo 'Pushing Docker image to Docker Hub...'
+                echo 'Pushing Docker image to Docker Hub...'
                 script {
+                    withCredentials([usernamePassword(credentialsId: DOCKER_HUB_CREDENTIALS_ID, passwordVariable: 'DOCKER_PASSWORD', usernameVariable: 'DOCKER_USERNAME')]) {
+                        sh "docker login -u ${DOCKER_USERNAME} -p ${DOCKER_PASSWORD}"
+                        sh "docker push ${DOCKER_IMAGE}"
                     withCredentials([usernamePassword(credentialsId: DOCKER_HUB_CREDENTIALS_ID, passwordVariable: 'DOCKER_PASSWORD', usernameVariable: 'DOCKER_USERNAME')]) {
                         sh "docker login -u ${DOCKER_USERNAME} -p ${DOCKER_PASSWORD}"
                         sh "docker push ${DOCKER_IMAGE}"
@@ -58,6 +68,7 @@ pipeline {
     
     post {
         always {
+            echo 'Cleaning up workspace...'
             echo 'Cleaning up workspace...'
             cleanWs()
         }
